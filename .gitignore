@@ -43,3 +43,8 @@ temp/
 # Operating system
 .DS_Store
 Thumbs.db
+
+# Local dataset archives
+dataset_release_source/
+dataset_release_parts/
+dataset_release.7z*
