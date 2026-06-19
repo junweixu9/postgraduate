@@ -1,0 +1,45 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Experiment logs
+wandb/
+logs/
+*.log
+*.wandb
+events.out.tfevents.*
+
+# Model weights
+*.pth
+*.pt
+*.ckpt
+*.weights
+
+# Large datasets and arrays
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# Generated cache
+.cache/
+tmp/
+temp/
+
+# Operating system
+.DS_Store
+Thumbs.db

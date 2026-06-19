@@ -1,0 +1,300 @@
+from data_load_ascad_50000 import read_data
+from SCA_util_standard import perform_attacks
+import DL_model
+import numpy as np
+import tensorflow as tf
+import tensorflow.keras as tk
+from clr import OneCycleLR
+import matplotlib.pyplot as plt
+from datetime import datetime
+import matplotlib
+from mksci_font import config_font
+
+# 如果您在本地运行且需要弹窗显示，可以保留 TkAgg
+# matplotlib.use('TkAgg')
+config_font({"font.size": 24})  # 可同时设置字号
+matplotlib.use('TkAgg')
+# 设置字体
+import seaborn as sns
+class all(tf.keras.callbacks.Callback):
+    def __init__(self, validation=None):
+        super(all, self).__init__()
+        self.validation = validation
+
+    def set_params(self, params):
+        super(all, self).set_params(params)
+
+    def on_epoch_end(self, epoch, logs=None):
+        if self.validation:
+            global best_weights
+            global count
+            logs['all_val'] = float('inf')
+            X_attack_valid_metric, all_valid_plt_attack_metric = self.validation[0], self.validation[1]
+            y_pred_valid_metric = self.model.predict(X_attack_valid_metric)
+            # y_pred_valid_metric = y_pred_valid_metric -0.25 * adjustments
+            y_pred_valid_metric = tf.nn.softmax(y_pred_valid_metric)
+            avg_rank_current, avg_attack_traces, avg_corr_current = perform_attacks(all_valid_plt_attack_metric,
+                                                                                    y_pred_valid_metric,
+                                                                                    'all',
+                                                                                    leakage_model, dataset,
+                                                                                    num_traces_attacks)
+            all_corr_logs.append(avg_corr_current)
+            if avg_attack_traces[-1, correct_key] > 0:
+                print("攻击失败", )
+                print("GE:", avg_attack_traces[-1, correct_key])
+                print("corr:", avg_corr_current)
+
+            else:
+                print("攻击成功")
+                print("TGE0:", np.argmax(avg_attack_traces[:, correct_key] < 1))
+                print("corr:", avg_corr_current)
+
+            if not corr_logs:
+                corr_logs.append(avg_corr_current)
+                best_weights = self.model.get_weights()
+            else:
+                if corr_logs[-1] < avg_corr_current:
+                    corr_logs.append(avg_corr_current)
+                    best_weights = self.model.get_weights()
+                    count = 0
+                else:
+                    count = count + 1
+                    print(count)
+                    if count == 5:
+                        self.model.stop_training = True
+                        self.model.set_weights(best_weights)
+
+
+def compute_adjustment(Y_profiling, tro):
+    """compute the base probabilities"""
+
+    Y_profiling = np.argmax(Y_profiling[:, :9], 1)
+    label_freq = {}
+    for key in Y_profiling:
+        label_freq[key] = label_freq.get(key, 0) + 1
+    label_freq = dict(sorted(label_freq.items()))
+    label_freq_array = np.array(list(label_freq.values()))
+    label_freq_array = label_freq_array / label_freq_array.sum()
+    adjustments = np.log(label_freq_array ** tro + 1e-12)
+
+    # adaptive_margin =  1.0 / np.sqrt(np.sqrt(label_freq_array))
+    # adaptive_margin = adaptive_margin * (0.5 / np.max(adaptive_margin))
+    # adaptive_margin = tf.cast(adaptive_margin, dtype=tf.float32)
+    return adjustments
+
+
+def adjustment_loss(y_true, y_pred):
+    y_true = y_true[:, :classes]
+
+    if adjust_flag:
+        y_pred = y_pred + 1 * adjustments
+
+    y_pred = tf.nn.softmax(y_pred, 1)
+    loss = tk.backend.categorical_crossentropy(y_true, y_pred)
+    return loss
+
+
+if __name__ == '__main__':
+
+    # """变量配置"""
+    # dataset = 'CHES_CTF'  # ASCAD/ASCAD_rand/CHES_CTF
+    # leakage_model = 'HW'
+    # attack_model = 'CNN'  # MLP/CNN
+    # sigma_hw = 0  # sigma for the HW leakage model
+    # sigma_id = 0  # sigma for the ID leakage model
+    # num_traces_attacks = 2000
+    # # Select leakage model
+    # if leakage_model == 'ID':
+    #     classes = 256
+    # else:
+    #     classes = 9
+    # data_arguementation = False  # enable/disbale data arguementation
+    # data_arguementation_level = 0.25  # data arguementation level
+    # epoch = 50
+    # learning_rate = 5e-3
+    # output_metric = "all"  # rank/corr
+    # companion_metric = None  # None/all/kl_loss_model/'categorical_accuracy'
+    # model_size = 64  # the size of the profiling model
+    # rank_logs = []
+    # all_rank_logs = []
+    # corr_logs = []
+    # all_corr_logs = []
+    # loss_logs = []
+    # kl_loss_logs = []
+    # count = 0
+    # best_weights = None
+    # tro = 0.5
+    # adjust_flag = True
+    # current_time = datetime.now()
+    # day = current_time.day
+    # hour = current_time.hour
+    # minute = current_time.minute
+    # experiment_time = 'time_is{}_{}_{}'.format(int(day),
+    #                                            int(hour),
+    #                                            int(minute)
+    #                                            )
+    #
+    # """数据导入"""
+    # (X_profiling, X_attack), (Y_profiling, Y_attack), (
+    #     plt_profiling, plt_attack), correct_key, attack_byte, num_profiling_traces = read_data(
+    #     leakage_model,
+    #     data_arguementation,
+    #     data_arguementation_level,
+    #     attack_model, dataset,
+    #     sigma_hw, sigma_id)
+    #
+    # adjustments = compute_adjustment(Y_profiling, tro)
+    # adjustments_valid = tf.cast(adjustments, dtype=tf.double)
+    #
+    # """创建神经网络模型"""
+    # """ select the output_metric function """
+    #
+    # #
+    # model, batch_size, epoch_sota = DL_model.pick_SOAT(dataset, leakage_model, X_profiling.shape[1],
+    #                                                    companion_metric,
+    #                                                    adjustment_loss, learning_rate, model=attack_model,
+    #                                                    model_size=model_size)
+    # lr_manager = OneCycleLR(len(X_attack[:5000]), 128, learning_rate, end_percentage=0.2, scale_percentage=0.1,
+    #                         maximum_momentum=None, minimum_momentum=None, verbose=True)
+    #
+    # callback = [
+    #     lr_manager, all(validation=(X_attack[:5000], plt_attack[:5000], Y_attack[:5000]))
+    #      # all(validation=(X_attack[:5000], plt_attack[:5000], Y_attack[:5000]))
+    # ]
+    # """最佳模型的存储地址"""
+    # test_info = 'dataset{}_leakage_model{}_epoch{}_batch_size{}_output{}'.format(dataset, leakage_model,
+    #                                                                              epoch,
+    #                                                                              batch_size,
+    #                                                                              output_metric,
+    #                                                                              )
+    # model_root = 'Model/'
+    #
+    # filename = model_root + test_info
+    # """开始训练"""
+    # history = model.fit(x=X_profiling[:45000], y=Y_profiling[:45000, :9], batch_size=128, verbose=2,
+    #                     epochs=epoch,
+    #                     callbacks=callback
+    #                     )
+    # history.history.keys()
+    # loss = history.history['loss']
+    # predictions = model.predict(X_attack[:5000])
+    # predictions = tf.nn.softmax(predictions)
+    # attack_traces = perform_attacks(plt_attack[:5000], predictions, "attack_traces",
+    #                                 leakage_model, dataset, num_traces_attacks)
+    #
+    # y_pred_valid_metric_int = tf.argmax(predictions[:2000], axis=-1)
+    # y_true_valid_metric_int = tf.argmax(Y_attack[:2000, :9], axis=-1)
+    #
+    # confusion_matrix = tf.math.confusion_matrix(y_true_valid_metric_int, y_pred_valid_metric_int)
+    # print("Confusion Matrix:")
+    # print(confusion_matrix)
+
+    confusion_matrix =  np.array([
+    [0, 1, 0, 1, 3, 1, 0, 0, 0],
+    [1, 4, 4, 14, 25, 13, 8, 0, 0],
+    [1, 6, 26, 31, 89, 46, 25, 4, 2],
+    [7, 17, 50, 78, 152, 96, 34, 12, 3],
+    [2, 13, 61, 96, 192, 114, 53, 18, 7],
+    [8, 14, 40, 58, 167, 61, 42, 13, 3],
+    [2, 8, 18, 47, 74, 47, 20, 5, 2],
+    [0, 2, 2, 18, 12, 15, 6, 1, 0],
+    [0, 0, 0, 1, 1, 3, 0, 0, 0]
+])
+    cm = confusion_matrix
+    plt.figure(figsize=(10, 8), dpi=120)
+    ax = plt.subplot(111)
+
+    sns.set(font_scale=1.5)
+
+    # 使用更柔和的色板，添加边框线
+    sns.heatmap(cm,
+                cmap='Reds',  # 关键修改：从白到黑的渐变
+                annot=True,
+                fmt='d',
+                linewidths=0.5,
+                linecolor='white',
+                cbar_kws={"shrink": 0.8, "aspect": 30})
+
+    ax.xaxis.tick_top()
+    ax.set_ylabel('真实标签', fontsize=22, labelpad=12)
+    ax.set_xlabel('预测标签', fontsize=22, labelpad=12)
+
+    # 正确设置 y 轴标签旋转和对齐（替换原来的 rotation_mode）
+    ax.tick_params(axis='y',
+                   labelsize=22,
+                   labelrotation=45,
+                   pad=5,
+                   labelleft=True)
+
+    # 手动调整 y 轴标签的对齐方式（替代 rotation_mode 的功能）
+    plt.setp(ax.get_yticklabels(), rotation=45, ha='right')
+
+    # 调整 x 轴标签对齐
+    ax.tick_params(axis='x', labelsize=22, pad=5)
+    ax.xaxis.set_tick_params(rotation=0)
+
+    # 添加标题并调整间距
+    ax.set_title('混淆矩阵', fontsize=22, pad=20, fontweight='bold')
+
+    # 调整颜色条字体大小
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=12)
+    current_time_end = datetime.now()
+    day_end = current_time_end.day
+    hour_end = current_time_end.hour
+    minute_end = current_time_end.minute
+    experiment_time_end = 'time_is{}_{}_{}'.format(int(day_end),
+                                                   int(hour_end),
+                                                   int(minute_end)
+                                                   )
+    # 自动调整布局
+    plt.tight_layout()
+    title = "C_AFTER.png"
+    plt.savefig(title, bbox_inches='tight', dpi=140, pad_inches=0.1)
+    plt.show()
+
+    # model_root = './'+test_info+'10.h5'
+    # model.save(model_root)
+
+    # Attack
+    # print('======Attack======')
+    # predictions = model.predict(X_attack[:5000])
+    # # predictions = predictions - 0.25 * adjustments
+    # predictions = tf.nn.softmax(predictions)
+    # attack_traces = perform_attacks(plt_attack[:5000], predictions, "attack_traces",
+    #                                 leakage_model, dataset, 3000)
+    # log = open('F:/result/cnn/c/50000_ce_tro0_cnn_421.txt', mode='a',
+    #            encoding='utf-8')
+    # print(file=log)
+    # print(file=log)
+    # current_time_end = datetime.now()
+    # day_end = current_time_end.day
+    # hour_end = current_time_end.hour
+    # minute_end = current_time_end.minute
+    # experiment_time_end = 'time_is{}_{}_{}'.format(int(day_end),
+    #                                                int(hour_end),
+    #                                                int(minute_end)
+    #                                                )
+
+    # if attack_traces[-1, correct_key] > 0:
+    #     print("攻击失败")
+    #     print("GE:", attack_traces[-1, correct_key],file=log)
+    #
+    # else:
+    #     print("攻击成功")
+    #     print("TGE0:", np.argmax(attack_traces[:, correct_key] < 1),file=log)
+    #
+    #
+    # print(experiment_time, file=log)
+    # print(experiment_time_end, file=log)
+    # print("learning_rate_", learning_rate,
+    #       "___architecture_", attack_model,
+    #       "___dataset_", dataset,
+    #       "___epochs_", epoch,
+    #       "___num_profiling_traces_", num_profiling_traces,
+    #       "___num_attack_traces_", num_traces_attacks,
+    #       "___sigma_hw_", sigma_hw,
+    #       "___sigma_id_", sigma_id,
+    #       "___adjust_flag_", adjust_flag,
+    #       "___tro_", tro, file=log)
+    # log.close()
